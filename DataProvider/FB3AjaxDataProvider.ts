@@ -2,50 +2,79 @@
 
 module FB3DataProvider {
 
-	export class AJAXDataProvider implements IJsonLoaderFactory {
-		public Request(URL: string, Callback: IJSonLoadedCallback, Progressor: FB3ReaderSite.ILoadProgress, CustomData?: any) {
-			new AjaxLoader(URL, Callback, Progressor, CustomData);
-		}
-		public ArtID2URL(ArtID: string, Chunk?: string): string {
-			var OutURL = '/DataProvider/AjaxExample/' + ArtID+'.';
-			if (Chunk == null) {
-				OutURL += 'toc.js';
-			} else if (Chunk.match(/\./)) {
-				OutURL += Chunk;
-			} else {
-				OutURL += this.zeroPad(Chunk,3) + '.js?rand=' + Math.random();
-			}
-			return OutURL;
-		}
-
-		private zeroPad(num, places) {
-			var zero = places - num.toString().length + 1;
-			return Array(+(zero > 0 && zero)).join("0") + num;
-		}
-
+	interface IJSonLoadedCallbackWrap {
+		(ID: number, Data: any, CustomData?: any): void;
 	}
+	interface iWindow {
+		XDomainRequest?: any;
+		atob: any;
+		XMLHttpRequest: any;
+		ActiveXObject: any;
+		JSON: JSON;
+	}
+	declare var window: iWindow;
 
-	interface AJWindow extends Window { JSON: JSON; XMLHttpRequest: XMLHttpRequest; ActiveXObject: any}
-	declare var window: AJWindow;
-
+	export function zeroPad(num, places): string {
+		var zero = places - num.toString().length + 1;
+		return Array(+(zero > 0 && zero)).join("0") + num;
+	}
+	export class AJAXDataProvider implements IJsonLoaderFactory {
+		private ActiveRequests: any;
+		private CurrentRequestID: number;
+		private BaseURL: string;
+		public json_redirected:boolean;
+		constructor(public LitresURL: string, public ArtID2URL: IArtID2URL) {
+			this.BaseURL = LitresURL;
+			this.CurrentRequestID = 0;
+			this.ActiveRequests = {};
+		}
+		public Request(URL: string, Callback: IJSonLoadedCallback, Progressor: FB3ReaderSite.ILoadProgress, CustomData?: any) {
+			this.CurrentRequestID++;
+			this.ActiveRequests['req' + this.CurrentRequestID] = Callback;
+			new AjaxLoader(URL, (ID, Data: any, CustomData?: any) => this.CallbackWrap(ID, Data, CustomData), Progressor, this.CurrentRequestID, CustomData,this.json_redirected);
+		}
+		private CallbackWrap(ID:number, Data: any, CustomData?: any): void {
+			var Func = this.ActiveRequests['req' + this.CurrentRequestID];
+			if (Func) {
+				this.ActiveRequests['req' + this.CurrentRequestID](Data, CustomData);
+			}
+		}
+		public Reset(): void {
+			this.ActiveRequests = {};
+		}
+	}
 
 	class AjaxLoader {
 		private Req: XMLHttpRequest;
+		private xhrIE9: boolean;
 		constructor(public URL: string,
-			private Callback: IJSonLoadedCallback,
+			private Callback: IJSonLoadedCallbackWrap,
 			private Progressor: FB3ReaderSite.ILoadProgress,
-			public CustomData?: any
+			private ID: number,
+			public CustomData?: any,
+			private json_redirected?: boolean
 			) {
-			this.Progressor.HourglassOn(this, false, 'Loading ' + URL);
-			this.Req = this.HttpRequest();
-			try { // Old IE with it's internals does not support this
-				this.Req.addEventListener("progress", (e: ProgressEvent) => this.onUpdateProgress(e), false);
-				this.Req.addEventListener("error", (e: ProgressEvent) => this.onTransferFailed(e), false);
-				this.Req.addEventListener("abort", (e: ProgressEvent) => this.onTransferAborted(e), false);
-			} catch (e) { }
-			this.Req.onreadystatechange = () => this.onTransferComplete();
-			this.Req.open('GET', URL, true);
-			this.Req.send(null);
+				this.xhrIE9 = false;
+				this.Progressor.HourglassOn(this, false, 'Loading ' + this.URL);
+				this.Req = this.HttpRequest();
+				try { // Old IE with it's internals does not support this
+					this.Req.addEventListener("progress", (e: ProgressEvent) => this.onUpdateProgress(e), false);
+					this.Req.addEventListener("error", (e: ProgressEvent) => this.onTransferFailed(e), false);
+					this.Req.addEventListener("abort", (e: ProgressEvent) => this.onTransferAborted(e), false);
+				} catch (e) {
+					this.Req.onprogress = function () {};
+					this.Req.onerror = (e: any) => this.onTransferFailed(e);
+					this.Req.ontimeout = (e: ProgressEvent) => this.onTransferAborted(e);
+				}
+				this.Req.open('GET', this.URL, true);
+				if (this.xhrIE9) {
+					this.Req.timeout = 0;
+					this.Req.onload = () => this.onTransferIE9Complete();
+					setTimeout(() => this.Req.send(null), '200');
+				} else {
+					this.Req.onreadystatechange = () => this.onTransferComplete();
+					this.Req.send(null);
+				}
 		}
 
 		public onTransferComplete() {
@@ -55,7 +84,7 @@ module FB3DataProvider {
 				} else {
 					this.Progressor.HourglassOff(this);
 					if (this.Req.status == 200) {
-						this.Callback(this.parseJSON(this.Req.responseText), this.CustomData);
+						this.ParseData(this.Req.responseText);
 					} else {
 						this.Progressor.Alert('Failed to load "' + this.URL + '", server returned error "' + this.Req.status + '"');
 					}
@@ -66,28 +95,60 @@ module FB3DataProvider {
 			//}
 		}
 
+		private onTransferIE9Complete() {
+			if (this.Req.responseText && this.Req.responseText != '') {
+				this.ParseData(this.Req.responseText);
+			} else {
+				this.Progressor.Alert('Failed to load "' + this.URL + '", server returned error "NO STATUS FOR IE9"');
+			}
+		}
+
+		private ParseData(Result) {
+			var Data = this.parseJSON(Result);
+			var URL = this.FindRedirectInJSON(Data);
+			if (URL) {
+				new AjaxLoader(URL,
+					(ID, Data: any, CustomData?: any) => this.Callback(ID, Data, CustomData),
+					this.Progressor,
+					this.ID,
+					this.CustomData);
+			} else {
+				this.Callback(this.ID, Data, this.CustomData);
+			}
+		}
+
 		private onUpdateProgress(e: ProgressEvent) {
 			this.Progressor.Progress(this, e.loaded / e.total * 100);
 		}
 		private onTransferFailed(e: ProgressEvent) {
 			this.Progressor.HourglassOff(this);
-			this.Progressor.Alert('Failed to load "' + URL + '"');
+			this.Progressor.Alert('Failed to load "' + this.URL + '"');
 		}
 		private onTransferAborted(e: ProgressEvent) {
 			this.Progressor.HourglassOff(this);
-			this.Progressor.Alert('Failed to load "' + URL + '" (interrupted)');
+			this.Progressor.Alert('Failed to load "' + this.URL + '" (interrupted)');
 		}
 
 		private HttpRequest(): XMLHttpRequest {
 			var ref = null;
-			if (window.XMLHttpRequest) {
+			if (document.all && !window.atob && (<any> window).XDomainRequest && this.json_redirected) {
+				ref = new window.XDomainRequest(); // IE9 =< fix
+				this.xhrIE9 = true;
+			} else if (window.XMLHttpRequest) {
 				ref = new XMLHttpRequest();
 			} else if (window.ActiveXObject) { // Older IE.
 				ref = new ActiveXObject("MSXML2.XMLHTTP.3.0");
 			}
 			return ref;
 		}
+		private FindRedirectInJSON(data): string {
+			if (data && data.url) {
+				return data.url;
+			}
+			return undefined;
+		}
 		private parseJSON(data: string): Object {
+			data = data.replace(/^\n/, ''); // aldebaran json workaround
 			// Borrowed bits from JQuery & http://json.org/json2.js
 			if (data === undefined || data =='') { return null; }
 

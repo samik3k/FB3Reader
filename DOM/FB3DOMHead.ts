@@ -2,19 +2,22 @@
 
 module FB3DOM {
 
+	export var MaxFootnoteHeight: number;
+	export interface IXPath extends Array<any> { }
 	export interface InnerHTML extends String {};
 	export interface IRange {
-		From: FB3Reader.IPosition;
-		To: FB3Reader.IPosition;
+		From: FB3ReaderAbstractClasses.IPosition;
+		To: FB3ReaderAbstractClasses.IPosition;
 	}
 	export interface IPageContainer {
 		Body: InnerHTML[];
 		FootNotes: InnerHTML[];
+		BodyXML: string[];
 	}
 	export interface IDOMTextReadyCallback { (PageData: IPageContainer): void; }
 	export interface IChunkLoadedCallback { (): void }
 
-	export interface ITOC {				// Compact notation as we plan to transfer this over network, why create overload
+	export interface ITOC { // Compact notation as we plan to transfer this over the network, why create an overload
 		t?: string;	// title
 		s: number;	// start root node N
 		e: number;	// end root node (including, use [0,-1] Pointer to get last block)
@@ -30,20 +33,37 @@ module FB3DOM {
 			g8?: number;	// 8 custom type #2
 			g9?: number;	// 9 other
 		};
+		cl: boolean; // partially clipped chapter (for trial book)
+		tcl: boolean; // entirely clipped chapter (for trial book)
+		fcp: boolean; // first character position in chapter 
 		c?: ITOC[];	// contents (subitems)
 	}
 	export interface IJSONBlock {	// Compact notation for the same reason
-		t: string;				// Tag name
+		t: string;			// Tag name
 		xp?: number[];		// XPAth shurtcut for this node in the native XML
-		c?: any[];				// Child nodes/text for this tag (array)
-		nc?: string;			// Native class name for the block
-		css?: string;			// Native CSS for the block
-		i?: string;				// FB/HTML ID (may be user as anchor target f.e.)
+		c?: IJSONBlock[];	// Child nodes/text for this tag (array)
+		nc?: string;		// Native class name for the block
+		css?: string;		// Native CSS for the block
+		i?: string;			// FB/HTML ID (may be user as anchor target f.e.)
 		href?: string;		// Anchor
-		f?: any;					// Footnote contents
-		w?: number;				// image width
-		h?: number;				// image height
-		s?: string;				// image src attribute
+		f?: any;			// Footnote contents
+		w?: number;			// image width (in pixels, image itself)
+		wth?: number;		// image width as requested in fb3 document
+		minw?: number;		// image minimal widthfrom in fb3 document
+		maxw?: number;		// image maximal widthfrom in fb3 document
+		h?: number;			// image height
+		s?: string;			// image src attribute
+		hr: number[];		// target internal xpath for internal hrefs
+		op?: boolean;		// Is this node unbreakable, should it fit on ONE page, mo matter the cost?
+		fl?: string;		// Where to float the box? May be left|right|center|default
+		al?: string;		// Text-align May be left|right|center|justify
+		valn?: string;		// TD vertical align. top|middle|bottom
+		bnd?: string;		// ID of the element to float around
+		brd?: boolean;		// Border presence
+		csp?: number;		// colspan
+		rsp?: number;		// rowspan
+		att?: boolean;		// If true - note title may have autotext (default behaviour).
+							// Like [1] or * or **. Or leave text from the document if false
 	}
 
 	export interface IDataDisposition {
@@ -51,8 +71,24 @@ module FB3DOM {
 		e: number;
 		url: string;
 		loaded: number; // 0 - not loaded, 1 - requested, 2 - loaded, available
-		xps: FB3Bookmarks.IXPath;  // native fb2 xpath for the chunk first element 
-		xpe: FB3Bookmarks.IXPath;  // same for the last one
+		xps: IXPath;  // native fb2 xpath for the chunk first element 
+		xpe: IXPath;  // same for the last one
+	}
+
+	export interface IMetaData {
+		Title: string;
+		UUID: string;
+		Authors: IAuthorsData[];
+	}
+	export interface IAuthorsData {
+		First: string;
+		Last: string;
+		Middle: string;
+	}
+
+	export interface IFB3BlockRectangle {
+		Width: number;
+		Height: number;
 	}
 
 	export interface IFB3Block {
@@ -65,9 +101,8 @@ module FB3DOM {
 		ArtID2URL(Chunk?: string): string;
 		Data: IJSONBlock;
 		Childs: IFB3Block[];
-		Bookmarks: FB3Bookmarks.IBookmarks[];
 		text: string				// empty for tags, filled for text nodes
-		XPath: FB3Bookmarks.IXPath;		// Source FB2 file adress - allows to work with store/load selections
+		XPath: IXPath;		// Source FB2 file adress - allows to work with store/load selections
 		GetHTML(HyphOn: boolean,
 			BookStyleNotes: boolean,
 			Range: IRange,
@@ -76,7 +111,11 @@ module FB3DOM {
 			ViewPortH: number,
 			PageData: IPageContainer,
 			Bookmarks: FB3Bookmarks.IBookmark[]);
-		Position(): FB3Reader.IPosition;
+		GetXML(Range: IRange,
+			PageData: IPageContainer);
+		Position(): FB3ReaderAbstractClasses.IPosition;
+		IsBlock(): boolean;
+		IsUnbreakable?: boolean;
 	}
 
 	export interface IIFB3DOMReadyFunc{ (FB3DOM: IFB3DOM): void }
@@ -84,24 +123,26 @@ module FB3DOM {
 	export interface IFB3DOM extends IFB3Block{
 		Ready: boolean;
 		Progressor: FB3ReaderSite.ILoadProgress;
-		Alert: FB3ReaderSite.IAlert;
+		Site: FB3ReaderSite.IFB3ReaderSite;
 		DataProvider: FB3DataProvider.IJsonLoaderFactory;
 		TOC: ITOC[];
 		DataChunks: IDataDisposition[];
+		MetaData: IMetaData;
+		PagesPositionsCache: FB3PPCache.IFB3PPCache;
 		ArtID2URL(Chunk?: string): string;
+		Bookmarks: FB3Bookmarks.IBookmarks[];
 		Init(HyphOn: boolean,
-			ArtID: string,
 			OnDone: IIFB3DOMReadyFunc);
 		GetHTMLAsync(HyphOn: boolean,
-			BookStyleNotes:boolean,
+			BookStyleNotes: boolean,
 			Range: IRange,
 			IDPrefix: string,
 			ViewPortW: number,
 			ViewPortH: number,
 			Callback: IDOMTextReadyCallback): void;
-		GetElementByAddr(Position: FB3Reader.IPosition): IFB3Block;
-		GetAddrByXPath(XPath: FB3Bookmarks.IXPath): FB3Reader.IPosition;
-		GetXPathFromPos(Position: FB3Reader.IPosition): FB3Bookmarks.IXPath;
+		GetElementByAddr(Position: FB3ReaderAbstractClasses.IPosition): IFB3Block;
+		GetAddrByXPath(XPath: IXPath): FB3ReaderAbstractClasses.IPosition;
+		GetXPathFromPos(Position: FB3ReaderAbstractClasses.IPosition, End?:boolean): IXPath;
 		OnChunkLoaded(Data: IJSONBlock[], CustomData?: any): void;
 		ChunkUrl(N: number): string;
 		LoadChunks(MissingChunks: number[], Callback: IChunkLoadedCallback): void; // Sets the chunks to be loaded
@@ -112,6 +153,10 @@ module FB3DOM {
 			ViewPortW: number,
 			ViewPortH: number,
 			PageData: IPageContainer);
+		GetXML(Range: IRange,
+			PageData: IPageContainer);		
+		XPChunk(X: IXPath): number;
+		Reset(): void; // Stop all callbacks (leaving some internal processing)
+		GetFullTOC(): object;
 	}
-
 }

@@ -1,7 +1,11 @@
 #!/usr/bin/perl
 use strict;
-use XPortal::Hyphenate; # HyphString used, may remove and replace with something
-use XPortal::Settings;  # TMPPath used, you can use your path and remove this
+use Hyphenate; # HyphString used, may remove and replace with something
+
+my $TMPPath = '/tmp';
+
+#use XPortal::Settings;  # TMPPath used, you can use your path and remove this
+#$TMPPath = $XPortal::Settings::TMPPath;
 
 use strict;
 use XML::LibXSLT;
@@ -16,12 +20,17 @@ use JSON::PP;
 my $FBURI='http://www.gribuser.ru/xml/fictionbook/2.0';
 my $PartLimit = 10000;
 my $Styles=qr/a|style|strong|emphasis|sub|sup|strikethrough|code/;
-my $LineBreakChars = qr/[\-\/]/;
+my $LineBreakChars = qr/[\-\/…\?\!\}\|–—]/;
 
 my $XML = $ARGV[0];
 my $XSL = $ARGV[1];
 my $MetaXSL = $ARGV[2];
 my $Out = $ARGV[3];
+my $Version = $ARGV[4];
+
+$Version = 1 if $Version =~/[\D\.]/;
+
+$Version="1.$Version" unless $Version=~/^\d+\.\d+$/;
 
 #my $XML = 'C:/Work/FictionHub/tmp/Vyigotskiyi_vyi_L._Psihologiya_Iskusstva.fb2';
 #my $XSL = 'C:/Work/FictionHub/xsl/convert/FB2_2_json.xsl';
@@ -29,7 +38,7 @@ my $Out = $ARGV[3];
 #my $Out = 'C:\Work\FictionHub\cgi\static\out.html';
 
 unless ($Out){
-	print "fb2json converter. Usage:\nfb2json.pl <srcfile.fb2> <stylesheet.xsl> <meta-stylesheet.xsl> <out>\n";
+	print "fb2json converter. Usage:\nfb2json.pl <srcfile.fb2> <stylesheet.xsl> <meta-stylesheet.xsl> </etc/out/> [doc.version]\n";
 	exit(0);
 }
 
@@ -43,11 +52,11 @@ sub SplitString{
 	$NeedHyph *= 1;
 	my $SRC = $Esc = EscString($Esc);
 	if ($NeedHyph){
-		$Esc = $HyphCache{$SRC} || XPortal::Hyphenate::HyphString($Esc);
+		$Esc = $HyphCache{$SRC} || Hyphenate::HyphString($Esc);
 	}
-	$Esc =~ s/\s+/ ","/g;
-	$Esc =~ s/($LineBreakChars+)(?!")/$1","/g;
-	$Esc =~ s/("|^) ","/$1 /g;
+	$Esc =~ s/[ \t]+/ ","/g;
+	$Esc =~ s/($LineBreakChars)(?![ "])/$1","/g;
+#	$Esc =~ s/("|^) ","/$1 /g; - never uncoment thus, leading spoacec bring death!
 	$Esc =~ s/"",|,""|","$//g;
 	if ($NeedHyph){
 		$HyphCache{$SRC} = $Esc;
@@ -59,7 +68,7 @@ sub SplitString{
 
 sub EscString{
 	my $Esc=shift || return;
-	$Esc = Encode::decode_utf8($Esc." "); # Hack to get live string from LibXML
+	$Esc = DecodeUtf8($Esc." "); # Hack to get live string from LibXML
 	$Esc =~ s/(["\\])/\\$1/g;
 	$Esc =~ s/\r?\n\r?/ /g;
 	$Esc =~ s/ $//;
@@ -71,13 +80,13 @@ if (-f $XML) {
 	use File::Basename;
 
 	open XML, $XML or die "Cannot open file $XML";
-	my $XMLData = Encode::decode_utf8(join '', (<XML>));
+	my $XMLData = DecodeUtf8(join '', (<XML>));
 	close XML;
 
 	$XMLData =~ s/([\s>])([^\s<>]+)(<a\s+[^>]*?type="note"[^>]*?>[^<]{1,10}<\/a>[,\.\?"'“”«»‘’;:\)…\/]?)/$1.HypheNOBR($2,$3)/ges;
 	$XMLData =~ s/(\S)(<\/$Styles>)(\s+)/$1 $2/gi;
 
-	$TmpXML = $XPortal::Settings::TMPPath . "/". $$ . "_" . basename($XML) . ".xml";
+	$TmpXML = $TMPPath . "/". $$ . "_" . basename($XML) . ".xml";
 
 	open TMPXML, ">", $TmpXML or die "Cannot open tmp file $TmpXML";
 	print TMPXML Encode::encode_utf8($XMLData);
@@ -93,11 +102,12 @@ sub HypheNOBR {
 	my ($Word, $NOBRCharSeq) = @_;
 
 #	$Word = EscString($Word);
-	my $Esc = $HyphCache{$Word} || XPortal::Hyphenate::HyphString($Word);
+	my $Esc = $HyphCache{$Word} || Hyphenate::HyphString($Word);
 
 	unless ($Esc =~ s/\xAD?([^\xAD]+)$/<nobr>$1/s) {
 		$Esc = '<nobr>'.$Esc;
 	}
+	$Esc =~ s/\xAD//gis;
 
 	return $Esc . $NOBRCharSeq . '</nobr>';
 }
@@ -148,9 +158,12 @@ my $NoCut=0;
 for my $Line (@JSonArr) {
 	if ($Line =~ s/\{chars:(\d+)\,/{/){
 		$PageStack += $1;
+		# Rude hack to compact obvious things a bit - we believe our device is at
+		# least 10 chars wide, so why would we keep all this hyphs at line's start?
+		while ($Line =~ s/(\{t:"p",xp:\[[^]]+\],c:\[")([^"]{1,10})","\xAD?/$1$2/g){}
 		if ($Line =~ s/\{type:"semiblock",/{/){
 			$NoCut++;
-			if ($Line =~ /",i:"(\w+)"/){
+			if ($Line =~ /,i:"(\w+)"/){
 				$HrefHash{ $1 } = $BlockN;
 			}
 		} else {
@@ -199,7 +212,7 @@ for my $Line (@JSonArr) {
 			$HrefHash{ $2 } = $BlockN;
 		}
 		if ($3){
-			$NewNode->{t} = $2;
+			$NewNode->{t} = $3;
 		}
 		push @{$TOC->{c}},$NewNode;
 		$TOC = $NewNode;
@@ -217,7 +230,9 @@ if (@DataToWrite){
 
 PatchFiles();
 
-open $OutFile, ">:utf8","$Out.toc.js";
+$JSonMeta =~ s/",version:"1\.0",Authors:\[/",version:"$Version",Authors:[/;
+
+open $OutFile, ">:utf8",$Out."toc.js";
 print $OutFile "{$JSonMeta,\nBody: [";
 my $Max = @{$RootTOC->{c}} - 1;
 for (my $i=0;$i<=$Max;$i++) {
@@ -246,11 +261,28 @@ unlink $TmpXML if $TmpXML;
 my %NeedPatch;
 sub FlushFile{
 	return unless @DataToWrite;
-	$DataToWrite[0]=~ /\bxp:(\[\d+(,\d+)*\b])/;
-	my $XPStart = $1;
-	$DataToWrite[$#DataToWrite]=~ /\bxp:(\[\d+(,\d+)*\b])/;
-	my $XPEnd = $1;
-	push @BlockMap,{s=>$Start,e=>$BlockN,fn=>sprintf("$Out.%03i.js",$FileN),
+	my  $i = 0;
+	until ($DataToWrite[$i]=~ /\bxp:(\[\d+(,\d+)*\b])(?!\bxp:\[)/) {
+		$i++;
+	}
+	my $XPStart;
+	if ($DataToWrite[$i]=~ /\bxp:(\[\d+(,\d+)*\b])(?!\bxp:\[)/){
+		$XPStart = $1;
+	} else {
+		die "START XPath not found: ".join("\n",@DataToWrite)
+	}
+
+	$i = $#DataToWrite;
+	until ($DataToWrite[$i]=~ /\bxp:(\[\d+(,\d+)*\b])(?!\bxp:\[)/){
+		$i--;
+	}
+	my $XPEnd;
+	if ($DataToWrite[$i]=~ /\bxp:(\[\d+(,\d+)*\b])(?!\bxp:\[)/){
+		$XPEnd = $1;
+	} else {
+		die "END XPath not found: ".join("\n",@DataToWrite)
+	}
+	push @BlockMap,{s=>$Start,e=>$BlockN,fn=>$Out.sprintf("%03i.js",$FileN),
 									xps=>$XPStart,
 									xpe=>$XPEnd};
 	my $outfile;
@@ -346,7 +378,7 @@ sub GetImageID {
 		my $ContentType=$_->getAttribute('content-type');
 
 		if (defined($id) && $ContentType=~ /image\/(jpeg|png|gif)/i) {
-			my $FN="$Out.$id";
+			my $FN=$Out.$id;
 			open IMGFILE, ">$FN" or die "$FN: $!";
 			binmode IMGFILE;
 			print (IMGFILE decode_base64($_->string_value()));
@@ -368,4 +400,11 @@ sub GetImgW{
 sub GetImgH{
 	my $Img = CanonizeName(shift);
 	return $DocumentImages{$Img}->[2];
+}
+sub DecodeUtf8 {
+	my $Out = shift;
+	unless (Encode::is_utf8($Out)) {
+		$Out = Encode::decode_utf8($Out);
+	}
+	return $Out;
 }

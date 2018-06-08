@@ -1,0 +1,7 @@
+{
+	"compilerOptions": {
+	"removeComments": true,
+	"newLine": "crlf",
+    "sourceMap": true
+    }
+}

@@ -14,6 +14,7 @@
     <IISExpressAnonymousAuthentication />
     <IISExpressWindowsAuthentication />
     <IISExpressUseClassicPipelineMode />
+    <TypeScriptToolsVersion>2.5</TypeScriptToolsVersion>
   </PropertyGroup>
   <ItemGroup>
     <Content Include="app.css" />
@@ -21,27 +22,25 @@
     <TypeScriptCompile Include="Bookmarks\FB3Bookmarks.ts" />
     <TypeScriptCompile Include="Bookmarks\FB3BookmarksHead.ts" />
     <TypeScriptCompile Include="DataProvider\FB3DataProviderHead.ts" />
-    <Content Include="default.htm" />
     <TypeScriptCompile Include="DOM\FB3DOM.ts" />
     <TypeScriptCompile Include="DOM\FB3DOMBlock.ts" />
     <Content Include="DOM\FB3DOMHead.ts" />
+    <TypeScriptCompile Include="plugins\lz-string.d.ts" />
+    <TypeScriptCompile Include="plugins\moment.d.ts" />
     <TypeScriptCompile Include="Reader\FB3Reader.ts" />
     <Content Include="FB3ReaderHeaders.ts" />
+    <Content Include="plugins\lz-string.min.js" />
+    <Content Include="plugins\moment.min.js" />
     <Content Include="Reader\FB3ReaderHead.ts" />
     <TypeScriptCompile Include="Site\FB3ReaderSite.ts" />
     <TypeScriptCompile Include="PagesPositionsCache\PPCacheHead.ts" />
     <TypeScriptCompile Include="PagesPositionsCache\PPCache.ts" />
     <TypeScriptCompile Include="Reader\FB3ReaderPage.ts" />
     <Content Include="Site\FB3ReaderSiteHead.ts" />
-  </ItemGroup>
-  <ItemGroup>
-    <TypeScriptCompile Include="app.ts" />
+    <TypeScriptCompile Include="Site\LocalBookmarks.ts" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="System" />
-  </ItemGroup>
-  <ItemGroup>
-    <Content Include="roadmap.txt" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Properties\" />
@@ -59,17 +58,7 @@
     <VisualStudio>
       <FlavorProperties GUID="{349c5851-65df-11da-9384-00065b846f21}">
         <WebProjectProperties>
-          <UseIIS>False</UseIIS>
-          <AutoAssignPort>True</AutoAssignPort>
-          <DevelopmentServerPort>51510</DevelopmentServerPort>
-          <DevelopmentServerVPath>/</DevelopmentServerVPath>
-          <IISUrl>http://localhost:64598/</IISUrl>
-          <OverrideIISAppRootUrl>True</OverrideIISAppRootUrl>
-          <IISAppRootUrl>http://localhost:64598/</IISAppRootUrl>
-          <NTLMAuthentication>False</NTLMAuthentication>
-          <UseCustomServer>True</UseCustomServer>
-          <CustomServerUrl>http://ajaxxx/</CustomServerUrl>
-          <SaveServerSettingsInUserFile>False</SaveServerSettingsInUserFile>
+          <SaveServerSettingsInUserFile>True</SaveServerSettingsInUserFile>
         </WebProjectProperties>
       </FlavorProperties>
     </VisualStudio>
@@ -78,7 +67,17 @@
     <TypeScriptTarget>ES3</TypeScriptTarget>
     <TypeScriptIncludeComments>true</TypeScriptIncludeComments>
     <TypeScriptSourceMap>true</TypeScriptSourceMap>
-    <TypeScriptModuleKind>AMD</TypeScriptModuleKind>
+    <TypeScriptModuleKind>amd</TypeScriptModuleKind>
+    <TypeScriptGeneratesDeclarations>False</TypeScriptGeneratesDeclarations>
+    <TypeScriptJSXEmit>None</TypeScriptJSXEmit>
+    <TypeScriptCompileOnSaveEnabled>True</TypeScriptCompileOnSaveEnabled>
+    <TypeScriptNoImplicitAny>False</TypeScriptNoImplicitAny>
+    <TypeScriptRemoveComments>True</TypeScriptRemoveComments>
+    <TypeScriptOutFile />
+    <TypeScriptOutDir />
+    <TypeScriptNoEmitOnError>True</TypeScriptNoEmitOnError>
+    <TypeScriptMapRoot />
+    <TypeScriptSourceRoot />
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <TypeScriptTarget>ES3</TypeScriptTarget>
